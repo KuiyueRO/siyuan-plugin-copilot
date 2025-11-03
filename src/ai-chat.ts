@@ -22,6 +22,7 @@ export interface Message {
     role: 'user' | 'assistant' | 'system';
     content: string | MessageContent[];
     attachments?: MessageAttachment[];
+    thinking?: string; // 思考过程内容
 }
 
 export interface ChatOptions {
@@ -35,6 +36,9 @@ export interface ChatOptions {
     onComplete?: (fullText: string) => void;
     onError?: (error: Error) => void;
     signal?: AbortSignal; // 用于中断请求
+    enableThinking?: boolean; // 是否启用思考模式
+    onThinkingChunk?: (chunk: string) => void; // 思考过程回调
+    onThinkingComplete?: (thinking: string) => void; // 思考完成回调
 }
 
 export interface ModelInfo {
@@ -220,13 +224,20 @@ async function chatOpenAIFormat(
         content: msg.content
     }));
 
-    const requestBody = {
+    const requestBody: any = {
         model: options.model,
         messages: formattedMessages,
         temperature: options.temperature || 0.7,
         max_tokens: options.maxTokens,
         stream: options.stream !== false
     };
+
+    // 如果启用思考模式，添加相关参数（适用于支持的模型如 DeepSeek）
+    if (options.enableThinking) {
+        requestBody.stream_options = {
+            include_usage: true
+        };
+    }
 
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -365,7 +376,9 @@ async function handleStreamResponse(
     const reader = body.getReader();
     const decoder = new TextDecoder();
     let fullText = '';
+    let thinkingText = '';
     let buffer = '';
+    let isThinkingPhase = false;
 
     try {
         while (true) {
@@ -384,9 +397,23 @@ async function handleStreamResponse(
                 if (trimmed.startsWith('data: ')) {
                     try {
                         const json = JSON.parse(trimmed.slice(6));
-                        const content = json.choices?.[0]?.delta?.content;
-
+                        const delta = json.choices?.[0]?.delta;
+                        
+                        // 检查是否有思考内容（reasoning_content）
+                        if (options.enableThinking && delta?.reasoning_content) {
+                            isThinkingPhase = true;
+                            thinkingText += delta.reasoning_content;
+                            options.onThinkingChunk?.(delta.reasoning_content);
+                        }
+                        
+                        // 普通内容
+                        const content = delta?.content;
                         if (content) {
+                            // 如果之前在思考阶段，现在开始输出正文，说明思考结束
+                            if (isThinkingPhase && options.onThinkingComplete) {
+                                options.onThinkingComplete(thinkingText);
+                                isThinkingPhase = false;
+                            }
                             fullText += content;
                             options.onChunk?.(content);
                         }
@@ -397,6 +424,11 @@ async function handleStreamResponse(
             }
         }
 
+        // 如果结束时还在思考阶段，调用思考完成回调
+        if (isThinkingPhase && options.onThinkingComplete) {
+            options.onThinkingComplete(thinkingText);
+        }
+
         options.onComplete?.(fullText);
     } catch (error) {
         // 检查是否是用户主动中断
@@ -405,6 +437,9 @@ async function handleStreamResponse(
             // 如果已经有部分内容，仍然调用 onComplete
             if (fullText) {
                 options.onComplete?.(fullText);
+            }
+            if (thinkingText && options.onThinkingComplete) {
+                options.onThinkingComplete(thinkingText);
             }
         } else {
             console.error('Stream reading error:', error);

@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { createEventDispatcher } from 'svelte';
+    import { createEventDispatcher, onMount, onDestroy } from 'svelte';
     import type { ProviderConfig, CustomProviderConfig } from '../defaultSettings';
 
     export let providers: Record<string, any>;
@@ -23,6 +23,9 @@
     };
 
     let expandedProviders: Set<string> = new Set();
+    let containerWidth = 0;
+    let containerElement: HTMLElement;
+    let resizeObserver: ResizeObserver | null = null;
 
     // 响应currentProvider变化，自动展开当前平台
     $: if (currentProvider) {
@@ -112,7 +115,19 @@
         const config = getProviderConfig(currentProvider);
         if (!config) return '请选择模型';
         const model = config.models?.find(m => m.id === currentModelId);
-        return model ? `${getProviderName(currentProvider)} - ${model.name}` : '请选择模型';
+        return model ? model.name : '请选择模型';
+    })();
+
+    // 根据容器宽度自适应显示模型名称
+    $: displayModelName = (() => {
+        if (!currentModelName) return '请选择模型';
+        // 如果容器宽度小于 200px，只显示模型名的前10个字符
+        if (containerWidth > 0 && containerWidth < 200) {
+            return currentModelName.length > 10
+                ? currentModelName.substring(0, 10) + '...'
+                : currentModelName;
+        }
+        return currentModelName;
     })();
 
     function closeOnOutsideClick(event: MouseEvent) {
@@ -129,16 +144,34 @@
     } else {
         document.removeEventListener('click', closeOnOutsideClick);
     }
+
+    // 监听容器宽度变化
+    onMount(() => {
+        if (containerElement) {
+            resizeObserver = new ResizeObserver(entries => {
+                for (const entry of entries) {
+                    containerWidth = entry.contentRect.width;
+                }
+            });
+            resizeObserver.observe(containerElement);
+        }
+    });
+
+    onDestroy(() => {
+        if (resizeObserver) {
+            resizeObserver.disconnect();
+        }
+    });
 </script>
 
-<div class="model-selector">
+<div class="model-selector" bind:this={containerElement}>
     <button
         class="model-selector__button b3-button b3-button--text"
         on:click|stopPropagation={() => (isOpen = !isOpen)}
-        title="切换模型"
+        title={currentModelName}
     >
         <svg class="b3-button__icon"><use xlink:href="#iconModel"></use></svg>
-        <span class="model-selector__current">{currentModelName}</span>
+        <span class="model-selector__current">{displayModelName}</span>
         <svg
             class="b3-button__icon model-selector__arrow"
             class:model-selector__arrow--open={isOpen}

@@ -5,6 +5,10 @@ export interface ModelConfig {
     name: string;
     temperature: number;
     maxTokens: number;
+    capabilities?: {
+        thinking?: boolean; // 是否支持思考模式
+        vision?: boolean;   // 是否支持视觉
+    };
 }
 
 export interface ProviderConfig {

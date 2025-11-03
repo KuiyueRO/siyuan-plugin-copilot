@@ -290,6 +290,37 @@
                                     updateModel(model.id, 'maxTokens', model.maxTokens)}
                             />
                         </div>
+                        <div class="model-config-item">
+                            <span>模型能力</span>
+                            <div class="model-capabilities">
+                                <label class="b3-label b3-label--noborder">
+                                    <input
+                                        type="checkbox"
+                                        class="b3-switch"
+                                        checked={model.capabilities?.thinking || false}
+                                        on:change={(e) => {
+                                            if (!model.capabilities) model.capabilities = {};
+                                            model.capabilities.thinking = e.currentTarget.checked;
+                                            updateModel(model.id, 'capabilities', model.capabilities);
+                                        }}
+                                    />
+                                    <span class="capability-label">思考模式 (Thinking)</span>
+                                </label>
+                                <label class="b3-label b3-label--noborder">
+                                    <input
+                                        type="checkbox"
+                                        class="b3-switch"
+                                        checked={model.capabilities?.vision || false}
+                                        on:change={(e) => {
+                                            if (!model.capabilities) model.capabilities = {};
+                                            model.capabilities.vision = e.currentTarget.checked;
+                                            updateModel(model.id, 'capabilities', model.capabilities);
+                                        }}
+                                    />
+                                    <span class="capability-label">视觉 (Vision)</span>
+                                </label>
+                            </div>
+                        </div>
                     </div>
                 </div>
             {/each}
@@ -480,6 +511,25 @@
 
         input[type='number'] {
             width: 100%;
+        }
+    }
+
+    .model-capabilities {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 4px;
+
+        .b3-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 0;
+        }
+
+        .capability-label {
+            font-size: 12px;
+            color: var(--b3-theme-on-surface);
         }
     }
 

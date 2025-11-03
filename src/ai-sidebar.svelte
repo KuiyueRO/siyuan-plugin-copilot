@@ -29,11 +29,16 @@
     let currentInput = '';
     let isLoading = false;
     let streamingMessage = '';
+    let streamingThinking = ''; // 流式思考内容
+    let isThinkingPhase = false; // 是否在思考阶段
     let settings: any = {};
     let messagesContainer: HTMLElement;
     let textareaElement: HTMLTextAreaElement;
     let inputContainer: HTMLElement;
     let fileInputElement: HTMLInputElement;
+    
+    // 思考过程折叠状态管理
+    let thinkingCollapsed: Record<number, boolean> = {};
 
     // 附件管理
     let currentAttachments: MessageAttachment[] = [];
@@ -449,6 +454,8 @@
         currentAttachments = [];
         isLoading = true;
         streamingMessage = '';
+        streamingThinking = '';
+        isThinkingPhase = false;
         hasUnsavedChanges = true;
 
         await scrollToBottom();
@@ -552,6 +559,9 @@
         abortController = new AbortController();
 
         try {
+            // 检查是否启用思考模式
+            const enableThinking = modelConfig.capabilities?.thinking || false;
+            
             await chat(
                 currentProvider,
                 {
@@ -562,6 +572,17 @@
                     maxTokens: modelConfig.maxTokens > 0 ? modelConfig.maxTokens : undefined,
                     stream: true,
                     signal: abortController.signal, // 传递 AbortSignal
+                    enableThinking, // 启用思考模式
+                    onThinkingChunk: enableThinking ? async (chunk: string) => {
+                        isThinkingPhase = true;
+                        streamingThinking += chunk;
+                        await scrollToBottom();
+                    } : undefined,
+                    onThinkingComplete: enableThinking ? (thinking: string) => {
+                        isThinkingPhase = false;
+                        // 思考完成后自动折叠
+                        thinkingCollapsed[messages.length] = true;
+                    } : undefined,
                     onChunk: async (chunk: string) => {
                         streamingMessage += chunk;
                         await scrollToBottom();
@@ -571,8 +592,16 @@
                             role: 'assistant',
                             content: fullText,
                         };
+                        
+                        // 如果有思考内容，添加到消息中
+                        if (enableThinking && streamingThinking) {
+                            assistantMessage.thinking = streamingThinking;
+                        }
+                        
                         messages = [...messages, assistantMessage];
                         streamingMessage = '';
+                        streamingThinking = '';
+                        isThinkingPhase = false;
                         isLoading = false;
                         abortController = null;
                         hasUnsavedChanges = true;
@@ -584,6 +613,8 @@
                         }
                         isLoading = false;
                         streamingMessage = '';
+                        streamingThinking = '';
+                        isThinkingPhase = false;
                         abortController = null;
                     },
                 },
@@ -595,6 +626,8 @@
             if ((error as Error).name !== 'AbortError') {
                 isLoading = false;
                 streamingMessage = '';
+                streamingThinking = '';
+                isThinkingPhase = false;
             }
             abortController = null;
         }
@@ -605,14 +638,20 @@
         if (abortController) {
             abortController.abort();
             // 如果有已生成的部分，将其保存为消息
-            if (streamingMessage) {
-                messages = [
-                    ...messages,
-                    { role: 'assistant', content: streamingMessage + '\n\n[生成已中断]' },
-                ];
+            if (streamingMessage || streamingThinking) {
+                const message: Message = {
+                    role: 'assistant',
+                    content: streamingMessage + '\n\n[生成已中断]'
+                };
+                if (streamingThinking) {
+                    message.thinking = streamingThinking;
+                }
+                messages = [...messages, message];
                 hasUnsavedChanges = true;
             }
             streamingMessage = '';
+            streamingThinking = '';
+            isThinkingPhase = false;
             isLoading = false;
             abortController = null;
             pushMsg('已中断消息生成');
@@ -661,6 +700,9 @@
             ? [{ role: 'system', content: settings.aiSystemPrompt }]
             : [];
         streamingMessage = '';
+        streamingThinking = '';
+        isThinkingPhase = false;
+        thinkingCollapsed = {};
         currentSessionId = '';
         hasUnsavedChanges = false;
         pushMsg('对话已清空');
@@ -1455,13 +1497,35 @@
                     </div>
                 {/if}
 
+                <!-- 显示思考过程 -->
+                {#if message.role === 'assistant' && message.thinking}
+                    <div class="ai-message__thinking">
+                        <div
+                            class="ai-message__thinking-header"
+                            on:click={() => {
+                                thinkingCollapsed[index] = !thinkingCollapsed[index];
+                            }}
+                        >
+                            <svg class="ai-message__thinking-icon" class:collapsed={thinkingCollapsed[index]}>
+                                <use xlink:href="#iconRight"></use>
+                            </svg>
+                            <span class="ai-message__thinking-title">💭 思考过程</span>
+                        </div>
+                        {#if !thinkingCollapsed[index]}
+                            <div class="ai-message__thinking-content protyle-wysiwyg">
+                                {@html formatMessage(message.thinking)}
+                            </div>
+                        {/if}
+                    </div>
+                {/if}
+
                 <div class="ai-message__content protyle-wysiwyg">
                     {@html formatMessage(message.content)}
                 </div>
             </div>
         {/each}
 
-        {#if isLoading && streamingMessage}
+        {#if isLoading && (streamingMessage || streamingThinking)}
             <div
                 class="ai-message ai-message--assistant ai-message--streaming"
                 on:contextmenu={e => handleContextMenu(e, streamingMessage)}
@@ -1470,9 +1534,35 @@
                     <span class="ai-message__role">🤖 AI</span>
                     <span class="ai-message__streaming-indicator">●</span>
                 </div>
-                <div class="ai-message__content protyle-wysiwyg">
-                    {@html formatMessage(streamingMessage)}
-                </div>
+                
+                <!-- 显示流式思考过程 -->
+                {#if streamingThinking}
+                    <div class="ai-message__thinking">
+                        <div class="ai-message__thinking-header">
+                            <svg class="ai-message__thinking-icon">
+                                <use xlink:href="#iconRight"></use>
+                            </svg>
+                            <span class="ai-message__thinking-title">
+                                💭 思考中{isThinkingPhase ? '...' : ' (已完成)'}
+                            </span>
+                        </div>
+                        {#if !isThinkingPhase}
+                            <div class="ai-message__thinking-content protyle-wysiwyg">
+                                {@html formatMessage(streamingThinking)}
+                            </div>
+                        {:else}
+                            <div class="ai-message__thinking-content ai-message__thinking-content--streaming protyle-wysiwyg">
+                                {@html formatMessage(streamingThinking)}
+                            </div>
+                        {/if}
+                    </div>
+                {/if}
+                
+                {#if streamingMessage}
+                    <div class="ai-message__content protyle-wysiwyg">
+                        {@html formatMessage(streamingMessage)}
+                    </div>
+                {/if}
             </div>
         {/if}
 
@@ -2054,6 +2144,63 @@
         }
         50% {
             opacity: 0.3;
+        }
+    }
+
+    // 思考过程样式
+    .ai-message__thinking {
+        margin-bottom: 12px;
+        border: 1px solid var(--b3-border-color);
+        border-radius: 8px;
+        overflow: hidden;
+        background: var(--b3-theme-surface);
+    }
+
+    .ai-message__thinking-header {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 12px;
+        cursor: pointer;
+        user-select: none;
+        background: var(--b3-theme-surface);
+        transition: background 0.2s;
+
+        &:hover {
+            background: var(--b3-theme-background);
+        }
+    }
+
+    .ai-message__thinking-icon {
+        width: 14px;
+        height: 14px;
+        color: var(--b3-theme-on-surface-light);
+        transition: transform 0.2s;
+        transform: rotate(90deg);
+
+        &.collapsed {
+            transform: rotate(0deg);
+        }
+    }
+
+    .ai-message__thinking-title {
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--b3-theme-on-surface);
+    }
+
+    .ai-message__thinking-content {
+        padding: 12px;
+        border-top: 1px solid var(--b3-border-color);
+        background: var(--b3-theme-background);
+        font-size: 13px;
+        color: var(--b3-theme-on-surface-light);
+        line-height: 1.6;
+        max-height: 400px;
+        overflow-y: auto;
+
+        &.ai-message__thinking-content--streaming {
+            animation: fadeIn 0.3s ease-out;
         }
     }
 
