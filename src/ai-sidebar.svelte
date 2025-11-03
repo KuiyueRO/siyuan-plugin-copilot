@@ -48,10 +48,6 @@
     let isSessionManagerOpen = false;
     let hasUnsavedChanges = false;
 
-    // Token统计
-    let totalTokens = 0;
-    let inputTokens = 0;
-
     // 当前选中的提供商和模型
     let currentProvider = '';
     let currentModelId = '';
@@ -78,7 +74,6 @@
         if (settings.aiSystemPrompt) {
             messages = [{ role: 'system', content: settings.aiSystemPrompt }];
         }
-        updateTokenCount();
 
         // 订阅设置变化
         unsubscribe = settingsStore.subscribe(newSettings => {
@@ -163,12 +158,6 @@
         }
     }
 
-    // 更新token统计
-    function updateTokenCount() {
-        totalTokens = calculateTotalTokens(messages);
-        inputTokens = estimateTokens(currentInput);
-    }
-
     // 自动调整textarea高度
     function autoResizeTextarea() {
         if (textareaElement) {
@@ -180,7 +169,6 @@
     // 监听输入变化
     $: {
         currentInput;
-        updateTokenCount();
         tick().then(autoResizeTextarea);
     }
 
@@ -316,7 +304,6 @@
                         streamingMessage = '';
                         isLoading = false;
                         hasUnsavedChanges = true;
-                        updateTokenCount();
                     },
                     onError: (error: Error) => {
                         pushErrMsg(`AI 请求失败: ${error.message}`);
@@ -372,7 +359,6 @@
         streamingMessage = '';
         currentSessionId = '';
         hasUnsavedChanges = false;
-        updateTokenCount();
         pushMsg('对话已清空');
     }
 
@@ -874,7 +860,6 @@
             }
             currentSessionId = sessionId;
             hasUnsavedChanges = false;
-            updateTokenCount();
             await scrollToBottom();
             pushMsg(`已加载会话: ${session.title}`);
         }
@@ -894,7 +879,6 @@
             : [];
         currentSessionId = '';
         hasUnsavedChanges = false;
-        updateTokenCount();
         pushMsg('已创建新会话');
     }
 
@@ -910,6 +894,11 @@
             pushMsg('会话已删除');
         });
     }
+
+    // 打开插件设置
+    function openSettings() {
+        plugin.openSetting();
+    }
 </script>
 
 <div class="ai-sidebar">
@@ -921,16 +910,12 @@
             {/if}
         </h3>
         <div class="ai-sidebar__actions">
-            <span class="ai-sidebar__token-count" title="当前对话token数 / 输入框token数">
-                💬 {totalTokens} / ✏️ {inputTokens}
-            </span>
             <button
                 class="b3-button b3-button--text"
-                on:click={saveCurrentSession}
-                title="保存当前会话"
-                disabled={!hasUnsavedChanges}
+                on:click={newSession}
+                title="新建对话"
             >
-                <svg class="b3-button__icon"><use xlink:href="#iconSave"></use></svg>
+                <svg class="b3-button__icon"><use xlink:href="#iconAdd"></use></svg>
             </button>
             <SessionManager
                 bind:sessions
@@ -949,6 +934,9 @@
             </button>
             <button class="b3-button b3-button--text" on:click={clearChat} title="清空对话">
                 <svg class="b3-button__icon"><use xlink:href="#iconTrashcan"></use></svg>
+            </button>
+            <button class="b3-button b3-button--text" on:click={openSettings} title="打开设置">
+                <svg class="b3-button__icon"><use xlink:href="#iconSettings"></use></svg>
             </button>
         </div>
     </div>
@@ -1185,15 +1173,6 @@
         display: flex;
         align-items: center;
         gap: 4px;
-    }
-
-    .ai-sidebar__token-count {
-        font-size: 12px;
-        color: var(--b3-theme-on-surface-light);
-        padding: 4px 8px;
-        background: var(--b3-theme-surface);
-        border-radius: 4px;
-        margin-right: 4px;
     }
 
     .ai-sidebar__context-docs {
