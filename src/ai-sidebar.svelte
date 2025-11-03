@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount, tick, onDestroy } from 'svelte';
-    import { chat, estimateTokens, calculateTotalTokens, type Message } from './ai-chat';
+    import { chat, type Message, type MessageAttachment } from './ai-chat';
+    import type { MessageContent } from './ai-chat';
     import { pushMsg, pushErrMsg, sql, exportMdContent, openBlock } from './api';
     import ModelSelector from './components/ModelSelector.svelte';
     import SessionManager from './components/SessionManager.svelte';
@@ -32,6 +33,11 @@
     let messagesContainer: HTMLElement;
     let textareaElement: HTMLTextAreaElement;
     let inputContainer: HTMLElement;
+    let fileInputElement: HTMLInputElement;
+
+    // 附件管理
+    let currentAttachments: MessageAttachment[] = [];
+    let isUploadingFile = false;
 
     // 上下文文档
     let contextDocuments: ContextDocument[] = [];
@@ -195,6 +201,167 @@
         tick().then(autoResizeTextarea);
     }
 
+    // 处理粘贴事件
+    async function handlePaste(event: ClipboardEvent) {
+        const items = event.clipboardData?.items;
+        if (!items) return;
+
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+
+            // 处理图片
+            if (item.type.startsWith('image/')) {
+                event.preventDefault();
+                const file = item.getAsFile();
+                if (file) {
+                    await addImageAttachment(file);
+                }
+                return;
+            }
+
+            // 处理文件
+            if (item.kind === 'file') {
+                event.preventDefault();
+                const file = item.getAsFile();
+                if (file) {
+                    await addFileAttachment(file);
+                }
+                return;
+            }
+        }
+    }
+
+    // 添加图片附件
+    async function addImageAttachment(file: File) {
+        if (!file.type.startsWith('image/')) {
+            pushErrMsg('只支持图片文件');
+            return;
+        }
+
+        // 检查文件大小 (最大 10MB)
+        if (file.size > 10 * 1024 * 1024) {
+            pushErrMsg('图片文件过大，最大支持 10MB');
+            return;
+        }
+
+        try {
+            isUploadingFile = true;
+
+            // 将图片转换为 base64
+            const base64 = await fileToBase64(file);
+
+            currentAttachments = [
+                ...currentAttachments,
+                {
+                    type: 'image',
+                    name: file.name,
+                    data: base64,
+                    mimeType: file.type,
+                },
+            ];
+
+            pushMsg(`已添加图片: ${file.name}`);
+        } catch (error) {
+            console.error('Add image error:', error);
+            pushErrMsg('添加图片失败');
+        } finally {
+            isUploadingFile = false;
+        }
+    }
+
+    // 添加文件附件
+    async function addFileAttachment(file: File) {
+        // 只支持文本文件和图片
+        const isText =
+            file.type.startsWith('text/') ||
+            file.name.endsWith('.md') ||
+            file.name.endsWith('.txt') ||
+            file.name.endsWith('.json') ||
+            file.name.endsWith('.xml') ||
+            file.name.endsWith('.csv');
+
+        const isImage = file.type.startsWith('image/');
+
+        if (!isText && !isImage) {
+            pushErrMsg('只支持文本文件和图片文件');
+            return;
+        }
+
+        // 检查文件大小 (文本文件最大 5MB，图片最大 10MB)
+        const maxSize = isImage ? 10 * 1024 * 1024 : 5 * 1024 * 1024;
+        if (file.size > maxSize) {
+            pushErrMsg(`文件过大，最大支持 ${maxSize / 1024 / 1024}MB`);
+            return;
+        }
+
+        try {
+            isUploadingFile = true;
+
+            if (isImage) {
+                await addImageAttachment(file);
+            } else {
+                // 读取文本文件内容
+                const content = await file.text();
+
+                currentAttachments = [
+                    ...currentAttachments,
+                    {
+                        type: 'file',
+                        name: file.name,
+                        data: content,
+                        mimeType: file.type,
+                    },
+                ];
+
+                pushMsg(`已添加文件: ${file.name}`);
+            }
+        } catch (error) {
+            console.error('Add file error:', error);
+            pushErrMsg('添加文件失败');
+        } finally {
+            isUploadingFile = false;
+        }
+    }
+
+    // 文件转 base64
+    function fileToBase64(file: File): Promise<string> {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const result = reader.result as string;
+                resolve(result);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
+
+    // 触发文件选择
+    function triggerFileUpload() {
+        fileInputElement?.click();
+    }
+
+    // 处理文件选择
+    async function handleFileSelect(event: Event) {
+        const input = event.target as HTMLInputElement;
+        const files = input.files;
+
+        if (!files || files.length === 0) return;
+
+        for (let i = 0; i < files.length; i++) {
+            await addFileAttachment(files[i]);
+        }
+
+        // 清空 input，允许重复选择同一文件
+        input.value = '';
+    }
+
+    // 移除附件
+    function removeAttachment(index: number) {
+        currentAttachments = currentAttachments.filter((_, i) => i !== index);
+        pushMsg('已移除附件');
+    }
+
     // 滚动到底部
     async function scrollToBottom() {
         await tick();
@@ -245,7 +412,7 @@
 
     // 发送消息
     async function sendMessage() {
-        if (!currentInput.trim() || isLoading) return;
+        if ((!currentInput.trim() && currentAttachments.length === 0) || isLoading) return;
 
         // 检查设置
         const providerConfig = getCurrentProviderConfig();
@@ -271,10 +438,12 @@
         const userMessage: Message = {
             role: 'user',
             content: userContent,
+            attachments: currentAttachments.length > 0 ? [...currentAttachments] : undefined,
         };
 
         messages = [...messages, userMessage];
         currentInput = '';
+        currentAttachments = [];
         isLoading = true;
         streamingMessage = '';
         hasUnsavedChanges = true;
@@ -290,14 +459,87 @@
                 content: msg.content,
             }));
 
-        // 如果有上下文文档，将其添加到最后一条用户消息中（仅用于发送给AI）
-        if (contextDocuments.length > 0 && messagesToSend.length > 0) {
+        // 处理最后一条用户消息，添加附件和上下文文档
+        if (messagesToSend.length > 0) {
             const lastMessage = messagesToSend[messagesToSend.length - 1];
             if (lastMessage.role === 'user') {
-                const contextText = contextDocuments
-                    .map(doc => `## 文档: ${doc.title}\n\n${doc.content}`)
-                    .join('\n\n---\n\n');
-                lastMessage.content = `以下是相关文档作为上下文：\n\n${contextText}\n\n---\n\n我的问题：${userContent}`;
+                const lastUserMessage = messages[messages.length - 1];
+                const hasImages = lastUserMessage.attachments?.some(att => att.type === 'image');
+
+                // 如果有图片附件，使用多模态格式
+                if (hasImages) {
+                    const contentParts: any[] = [];
+
+                    // 先添加上下文文档（如果有）
+                    let textContent = '';
+                    if (contextDocuments.length > 0) {
+                        const contextText = contextDocuments
+                            .map(doc => `## 文档: ${doc.title}\n\n${doc.content}`)
+                            .join('\n\n---\n\n');
+                        textContent += `以下是相关文档作为上下文：\n\n${contextText}\n\n---\n\n`;
+                    }
+
+                    // 添加用户输入
+                    textContent += userContent;
+                    contentParts.push({ type: 'text', text: textContent });
+
+                    // 添加图片
+                    lastUserMessage.attachments?.forEach(att => {
+                        if (att.type === 'image') {
+                            contentParts.push({
+                                type: 'image_url',
+                                image_url: { url: att.data },
+                            });
+                        }
+                    });
+
+                    // 添加文本文件内容
+                    const fileTexts = lastUserMessage.attachments
+                        ?.filter(att => att.type === 'file')
+                        .map(att => `## 文件: ${att.name}\n\n\`\`\`\n${att.data}\n\`\`\`\n`)
+                        .join('\n\n---\n\n');
+
+                    if (fileTexts) {
+                        contentParts.push({
+                            type: 'text',
+                            text: `\n\n以下是附件文件内容：\n\n${fileTexts}`,
+                        });
+                    }
+
+                    lastMessage.content = contentParts;
+                } else {
+                    // 纯文本格式
+                    let enhancedContent = '';
+
+                    // 添加文本文件附件
+                    if (lastUserMessage.attachments && lastUserMessage.attachments.length > 0) {
+                        const attachmentTexts = lastUserMessage.attachments
+                            .map(att => {
+                                if (att.type === 'file') {
+                                    return `## 文件: ${att.name}\n\n\`\`\`\n${att.data}\n\`\`\`\n`;
+                                }
+                                return '';
+                            })
+                            .filter(Boolean)
+                            .join('\n\n---\n\n');
+
+                        if (attachmentTexts) {
+                            enhancedContent += `以下是附件内容：\n\n${attachmentTexts}\n\n---\n\n`;
+                        }
+                    }
+
+                    // 添加上下文文档
+                    if (contextDocuments.length > 0) {
+                        const contextText = contextDocuments
+                            .map(doc => `## 文档: ${doc.title}\n\n${doc.content}`)
+                            .join('\n\n---\n\n');
+                        enhancedContent += `以下是相关文档作为上下文：\n\n${contextText}\n\n---\n\n`;
+                    }
+
+                    if (enhancedContent) {
+                        lastMessage.content = `${enhancedContent}我的问题：${userContent}`;
+                    }
+                }
             }
         }
 
@@ -394,17 +636,30 @@
     }
 
     // 使用思源内置的Lute渲染markdown为HTML
-    function formatMessage(content: string): string {
+    // 将消息内容转换为字符串
+    function getMessageText(content: string | MessageContent[]): string {
+        if (typeof content === 'string') {
+            return content;
+        }
+        // 对于多模态内容，只提取文本部分
+        return content
+            .filter(part => part.type === 'text' && part.text)
+            .map(part => part.text)
+            .join('\n');
+    }
+
+    function formatMessage(content: string | MessageContent[]): string {
+        const textContent = getMessageText(content);
         try {
             // 检查window.Lute是否存在
             if (typeof window !== 'undefined' && (window as any).Lute) {
                 const lute = (window as any).Lute.New();
                 // 使用Md2BlockDOM将markdown转换为HTML
-                const html = lute.Md2BlockDOM(content);
+                const html = lute.Md2BlockDOM(textContent);
                 return html;
             }
             // 如果Lute不可用，回退到简单渲染
-            return content
+            return textContent
                 .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                 .replace(/\*(.*?)\*/g, '<em>$1</em>')
                 .replace(/`([^`]+)`/g, '<code>$1</code>')
@@ -415,7 +670,7 @@
                 .replace(/\n/g, '<br>');
         } catch (error) {
             console.error('Format message error:', error);
-            return content;
+            return textContent;
         }
     }
 
@@ -507,9 +762,10 @@
     }
 
     // 复制单条消息
-    function copyMessage(content: string, role: string) {
+    function copyMessage(content: string | MessageContent[]) {
+        const textContent = getMessageText(content);
         navigator.clipboard
-            .writeText(content)
+            .writeText(textContent)
             .then(() => {
                 pushMsg('消息已复制');
             })
@@ -520,9 +776,9 @@
     }
 
     // 处理消息框右键菜单
-    function handleContextMenu(event: MouseEvent, content: string, role: string) {
+    function handleContextMenu(event: MouseEvent, content: string | MessageContent[]) {
         event.preventDefault();
-        copyMessage(content, role);
+        copyMessage(content);
     }
 
     // 搜索文档
@@ -810,7 +1066,7 @@
     function generateSessionTitle(): string {
         const userMessages = messages.filter(m => m.role === 'user');
         if (userMessages.length > 0) {
-            const firstMessage = userMessages[0].content;
+            const firstMessage = getMessageText(userMessages[0].content);
             return firstMessage.length > 30 ? firstMessage.substring(0, 30) + '...' : firstMessage;
         }
         return '新对话';
@@ -1076,11 +1332,12 @@
         </div>
     </div>
 
-    <!-- 上下文文档列表 -->
-    {#if contextDocuments.length > 0}
+    <!-- 上下文文档和附件列表 -->
+    {#if contextDocuments.length > 0 || currentAttachments.length > 0}
         <div class="ai-sidebar__context-docs">
-            <div class="ai-sidebar__context-docs-title">📚 上下文文档</div>
+            <div class="ai-sidebar__context-docs-title">📌上下文内容</div>
             <div class="ai-sidebar__context-docs-list">
+                <!-- 显示上下文文档 -->
                 {#each contextDocuments as doc (doc.id)}
                     <div class="ai-sidebar__context-doc-item">
                         <button
@@ -1095,8 +1352,39 @@
                             on:click={() => openDocument(doc.id)}
                             title="点击查看文档"
                         >
-                            {doc.title}
+                            📄 {doc.title}
                         </button>
+                    </div>
+                {/each}
+
+                <!-- 显示当前附件 -->
+                {#each currentAttachments as attachment, index}
+                    <div class="ai-sidebar__context-doc-item">
+                        <button
+                            class="ai-sidebar__context-doc-remove"
+                            on:click={() => removeAttachment(index)}
+                            title="移除附件"
+                        >
+                            ×
+                        </button>
+                        {#if attachment.type === 'image'}
+                            <img
+                                src={attachment.data}
+                                alt={attachment.name}
+                                class="ai-sidebar__context-attachment-preview"
+                                title={attachment.name}
+                            />
+                            <span class="ai-sidebar__context-doc-name" title={attachment.name}>
+                                🖼️ {attachment.name}
+                            </span>
+                        {:else}
+                            <svg class="ai-sidebar__context-attachment-icon">
+                                <use xlink:href="#iconFile"></use>
+                            </svg>
+                            <span class="ai-sidebar__context-doc-name" title={attachment.name}>
+                                📄 {attachment.name}
+                            </span>
+                        {/if}
                     </div>
                 {/each}
             </div>
@@ -1114,7 +1402,7 @@
         {#each messages.filter(msg => msg.role !== 'system') as message, index (index)}
             <div
                 class="ai-message ai-message--{message.role}"
-                on:contextmenu={e => handleContextMenu(e, message.content, message.role)}
+                on:contextmenu={e => handleContextMenu(e, message.content)}
             >
                 <div class="ai-message__header">
                     <span class="ai-message__role">
@@ -1122,12 +1410,42 @@
                     </span>
                     <button
                         class="b3-button b3-button--text ai-message__copy"
-                        on:click={() => copyMessage(message.content, message.role)}
+                        on:click={() => copyMessage(message.content)}
                         title="复制这条消息"
                     >
                         <svg class="b3-button__icon"><use xlink:href="#iconCopy"></use></svg>
                     </button>
                 </div>
+
+                <!-- 显示附件 -->
+                {#if message.attachments && message.attachments.length > 0}
+                    <div class="ai-message__attachments">
+                        {#each message.attachments as attachment}
+                            <div class="ai-message__attachment">
+                                {#if attachment.type === 'image'}
+                                    <img
+                                        src={attachment.data}
+                                        alt={attachment.name}
+                                        class="ai-message__attachment-image"
+                                    />
+                                    <span class="ai-message__attachment-name">
+                                        {attachment.name}
+                                    </span>
+                                {:else}
+                                    <div class="ai-message__attachment-file">
+                                        <svg class="ai-message__attachment-icon">
+                                            <use xlink:href="#iconFile"></use>
+                                        </svg>
+                                        <span class="ai-message__attachment-name">
+                                            {attachment.name}
+                                        </span>
+                                    </div>
+                                {/if}
+                            </div>
+                        {/each}
+                    </div>
+                {/if}
+
                 <div class="ai-message__content protyle-wysiwyg">
                     {@html formatMessage(message.content)}
                 </div>
@@ -1137,7 +1455,7 @@
         {#if isLoading && streamingMessage}
             <div
                 class="ai-message ai-message--assistant ai-message--streaming"
-                on:contextmenu={e => handleContextMenu(e, streamingMessage, 'assistant')}
+                on:contextmenu={e => handleContextMenu(e, streamingMessage)}
             >
                 <div class="ai-message__header">
                     <span class="ai-message__role">🤖 AI</span>
@@ -1158,6 +1476,65 @@
         {/if}
     </div>
 
+    <!-- 上下文文档和附件列表 -->
+    {#if contextDocuments.length > 0 || currentAttachments.length > 0}
+        <div class="ai-sidebar__context-docs">
+            <div class="ai-sidebar__context-docs-title">📎 上下文内容</div>
+            <div class="ai-sidebar__context-docs-list">
+                <!-- 显示上下文文档 -->
+                {#each contextDocuments as doc (doc.id)}
+                    <div class="ai-sidebar__context-doc-item">
+                        <button
+                            class="ai-sidebar__context-doc-remove"
+                            on:click={() => removeContextDocument(doc.id)}
+                            title="移除文档"
+                        >
+                            ×
+                        </button>
+                        <button
+                            class="ai-sidebar__context-doc-link"
+                            on:click={() => openDocument(doc.id)}
+                            title="点击查看文档"
+                        >
+                            📄 {doc.title}
+                        </button>
+                    </div>
+                {/each}
+
+                <!-- 显示当前附件 -->
+                {#each currentAttachments as attachment, index}
+                    <div class="ai-sidebar__context-doc-item">
+                        <button
+                            class="ai-sidebar__context-doc-remove"
+                            on:click={() => removeAttachment(index)}
+                            title="移除附件"
+                        >
+                            ×
+                        </button>
+                        {#if attachment.type === 'image'}
+                            <img
+                                src={attachment.data}
+                                alt={attachment.name}
+                                class="ai-sidebar__context-attachment-preview"
+                                title={attachment.name}
+                            />
+                            <span class="ai-sidebar__context-doc-name" title={attachment.name}>
+                                🖼️ {attachment.name}
+                            </span>
+                        {:else}
+                            <svg class="ai-sidebar__context-attachment-icon">
+                                <use xlink:href="#iconFile"></use>
+                            </svg>
+                            <span class="ai-sidebar__context-doc-name" title={attachment.name}>
+                                📄 {attachment.name}
+                            </span>
+                        {/if}
+                    </div>
+                {/each}
+            </div>
+        </div>
+    {/if}
+
     <div
         class="ai-sidebar__input-container"
         bind:this={inputContainer}
@@ -1170,7 +1547,8 @@
                 bind:this={textareaElement}
                 bind:value={currentInput}
                 on:keydown={handleKeydown}
-                placeholder="输入消息... (Ctrl+Enter 发送，可拖入文档)"
+                on:paste={handlePaste}
+                placeholder="输入消息... (Ctrl+Enter 发送，可拖入文档或粘贴图片)"
                 class="ai-sidebar__input"
                 disabled={isLoading}
                 rows="1"
@@ -1178,7 +1556,7 @@
             <button
                 class="b3-button b3-button--primary ai-sidebar__send-btn"
                 on:click={sendMessage}
-                disabled={isLoading || !currentInput.trim()}
+                disabled={isLoading || (!currentInput.trim() && currentAttachments.length === 0)}
                 title="发送消息 (Ctrl+Enter)"
             >
                 {#if isLoading}
@@ -1190,7 +1568,31 @@
                 {/if}
             </button>
         </div>
+
+        <!-- 隐藏的文件上传 input -->
+        <input
+            type="file"
+            bind:this={fileInputElement}
+            on:change={handleFileSelect}
+            accept="image/*,.txt,.md,.json,.xml,.csv,text/*"
+            multiple
+            style="display: none;"
+        />
         <div class="ai-sidebar__bottom-row">
+            <button
+                class="b3-button b3-button--text ai-sidebar__upload-btn"
+                on:click={triggerFileUpload}
+                disabled={isUploadingFile || isLoading}
+                title="上传文件（图片或文本文件）"
+            >
+                {#if isUploadingFile}
+                    <svg class="b3-button__icon ai-sidebar__loading-icon">
+                        <use xlink:href="#iconRefresh"></use>
+                    </svg>
+                {:else}
+                    <svg class="b3-button__icon"><use xlink:href="#iconUpload"></use></svg>
+                {/if}
+            </button>
             <button
                 class="b3-button b3-button--text ai-sidebar__search-btn"
                 on:click={() => (isSearchDialogOpen = !isSearchDialogOpen)}
@@ -1453,7 +1855,7 @@
     .ai-sidebar__context-docs {
         padding: 12px 16px;
         background: var(--b3-theme-surface);
-        border-bottom: 1px solid var(--b3-border-color);
+        border-top: 1px solid var(--b3-border-color);
         flex-shrink: 0;
     }
 
@@ -1518,6 +1920,31 @@
         &:hover {
             text-decoration: underline;
         }
+    }
+
+    .ai-sidebar__context-doc-name {
+        flex: 1;
+        font-size: 12px;
+        color: var(--b3-theme-on-surface);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .ai-sidebar__context-attachment-preview {
+        width: 24px;
+        height: 24px;
+        object-fit: cover;
+        border-radius: 4px;
+        flex-shrink: 0;
+        border: 1px solid var(--b3-border-color);
+    }
+
+    .ai-sidebar__context-attachment-icon {
+        width: 16px;
+        height: 16px;
+        color: var(--b3-theme-on-surface-light);
+        flex-shrink: 0;
     }
 
     .ai-sidebar__messages {
@@ -1843,6 +2270,7 @@
         gap: 8px;
     }
 
+    .ai-sidebar__upload-btn,
     .ai-sidebar__search-btn {
         flex-shrink: 0;
     }
@@ -1858,6 +2286,54 @@
         flex: 1;
         display: flex;
         justify-content: flex-end;
+    }
+
+    // 消息附件样式
+    .ai-message__attachments {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 8px;
+    }
+
+    .ai-message__attachment {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        max-width: 200px;
+    }
+
+    .ai-message__attachment-image {
+        width: 100%;
+        max-height: 150px;
+        object-fit: cover;
+        border-radius: 6px;
+        border: 1px solid var(--b3-border-color);
+    }
+
+    .ai-message__attachment-file {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 12px;
+        background: var(--b3-theme-surface);
+        border: 1px solid var(--b3-border-color);
+        border-radius: 6px;
+    }
+
+    .ai-message__attachment-icon {
+        width: 20px;
+        height: 20px;
+        color: var(--b3-theme-on-surface-light);
+        flex-shrink: 0;
+    }
+
+    .ai-message__attachment-name {
+        font-size: 11px;
+        color: var(--b3-theme-on-surface-light);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     // 提示词选择器样式

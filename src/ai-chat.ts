@@ -3,9 +3,25 @@
  * 支持多个AI平台的API调用和流式输出
  */
 
+export interface MessageAttachment {
+    type: 'image' | 'file';
+    name: string;
+    data: string; // base64 或 URL
+    mimeType?: string;
+}
+
+export interface MessageContent {
+    type: 'text' | 'image_url';
+    text?: string;
+    image_url?: {
+        url: string;
+    };
+}
+
 export interface Message {
     role: 'user' | 'assistant' | 'system';
-    content: string;
+    content: string | MessageContent[];
+    attachments?: MessageAttachment[];
 }
 
 export interface ChatOptions {
@@ -197,9 +213,15 @@ async function chatOpenAIFormat(
 ): Promise<void> {
     const url = `${baseUrl}${endpoint}`;
 
+    // 转换消息格式以支持多模态
+    const formattedMessages = options.messages.map(msg => ({
+        role: msg.role,
+        content: msg.content
+    }));
+
     const requestBody = {
         model: options.model,
-        messages: options.messages,
+        messages: formattedMessages,
         temperature: options.temperature || 0.7,
         max_tokens: options.maxTokens,
         stream: options.stream !== false
@@ -250,10 +272,34 @@ async function chatGeminiFormat(
     // 转换消息格式
     const contents = options.messages
         .filter(msg => msg.role !== 'system')
-        .map(msg => ({
-            role: msg.role === 'assistant' ? 'model' : 'user',
-            parts: [{ text: msg.content }]
-        }));
+        .map(msg => {
+            const role = msg.role === 'assistant' ? 'model' : 'user';
+
+            // 处理多模态内容
+            if (typeof msg.content === 'string') {
+                return { role, parts: [{ text: msg.content }] };
+            } else {
+                // 转换为 Gemini 格式
+                const parts = msg.content.map(part => {
+                    if (part.type === 'text' && part.text) {
+                        return { text: part.text };
+                    } else if (part.type === 'image_url' && part.image_url) {
+                        // Gemini 使用 inline_data 格式
+                        const base64Data = part.image_url.url.replace(/^data:image\/\w+;base64,/, '');
+                        const mimeType = part.image_url.url.match(/^data:(image\/\w+);base64,/)?.[1] || 'image/jpeg';
+                        return {
+                            inline_data: {
+                                mime_type: mimeType,
+                                data: base64Data
+                            }
+                        };
+                    }
+                    return null;
+                }).filter(Boolean);
+
+                return { role, parts };
+            }
+        });
 
     const systemInstruction = options.messages.find(msg => msg.role === 'system');
 
@@ -460,6 +506,19 @@ export function estimateTokens(text: string): number {
  */
 export function calculateTotalTokens(messages: Message[]): number {
     return messages.reduce((total, msg) => {
-        return total + estimateTokens(msg.content);
+        if (typeof msg.content === 'string') {
+            return total + estimateTokens(msg.content);
+        } else {
+            // 处理多模态内容
+            return total + msg.content.reduce((sum, part) => {
+                if (part.type === 'text' && part.text) {
+                    return sum + estimateTokens(part.text);
+                } else if (part.type === 'image_url') {
+                    // 图片大约消耗85个token (根据OpenAI文档的低分辨率估算)
+                    return sum + 85;
+                }
+                return sum;
+            }, 0);
+        }
     }, 0);
 }
