@@ -384,7 +384,7 @@
             overflow-x: auto;
             margin: 8px 0;
             
-            code {
+            :global(code) {
                 background: none;
                 padding: 0;
             }

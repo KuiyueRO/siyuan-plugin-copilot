@@ -1,7 +1,7 @@
 {
-  "name": "siyuan-plugin-templates",
+  "name": "siyuan-plugin-ai-sidebar",
   "author": "Achuan-2",
-  "url": "https://github.com/Achuan-2/siyuan-plugin-templates",
+  "url": "https://github.com/Achuan-2/siyuan-plugin-ai-sidebar",
   "version": "0.0.1",
   "minAppVersion": "3.0.12",
   "backends": [
@@ -21,8 +21,8 @@
     "desktop-window"
   ],
   "displayName": {
-    "en_US": "Plugin sample with vite and svelte",
-    "zh_CN": "Achuan-2的插件样例"
+    "en_US": "AI sidebar",
+    "zh_CN": "AI侧栏"
   },
   "description": {
     "en_US": "SiYuan plugin sample with vite and svelte",
