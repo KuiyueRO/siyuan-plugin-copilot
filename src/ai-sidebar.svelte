@@ -591,9 +591,12 @@
                         await scrollToBottom();
                     },
                     onComplete: (fullText: string) => {
+                        // 转换 LaTeX 数学公式格式为 Markdown 格式
+                        const convertedText = convertLatexToMarkdown(fullText);
+                        
                         const assistantMessage: Message = {
                             role: 'assistant',
-                            content: fullText,
+                            content: convertedText,
                         };
 
                         // 如果有思考内容，添加到消息中
@@ -642,9 +645,12 @@
             abortController.abort();
             // 如果有已生成的部分，将其保存为消息
             if (streamingMessage || streamingThinking) {
+                // 转换 LaTeX 数学公式格式为 Markdown 格式
+                const convertedMessage = convertLatexToMarkdown(streamingMessage);
+                
                 const message: Message = {
                     role: 'assistant',
-                    content: streamingMessage + '\n\n' + t('aiSidebar.messages.interrupted'),
+                    content: convertedMessage + '\n\n' + t('aiSidebar.messages.interrupted'),
                 };
                 if (streamingThinking) {
                     message.thinking = streamingThinking;
@@ -756,12 +762,24 @@
             .join('\n');
     }
 
+    // 将 LaTeX 数学公式格式转换为 Markdown 格式（永久转换）
+    function convertLatexToMarkdown(text: string): string {
+        // 将 LaTeX 块级数学公式 \[...\] 转换为 $$...$$
+        text = text.replace(/\\\[([\s\S]*?)\\\]/g, (_match, formula) => {
+            const trimmedFormula = formula.trim();
+            return `\n\n$$\n${trimmedFormula}\n$$\n\n`;
+        });
+        
+        // 将 LaTeX 行内数学公式 \(...\) 转换为 $...$
+        text = text.replace(/\\\((.*?)\\\)/g, (_match, formula) => {
+            return `$${formula}$`;
+        });
+        
+        return text;
+    }
+
     function formatMessage(content: string | MessageContent[]): string {
         let textContent = getMessageText(content);
-
-        // 预处理：将 LaTeX 数学公式格式转换为 Markdown 格式
-        textContent = textContent.replace(/\\\[(.*?)\\\]/gs, '\n$$$$$1$$$$\n'); // LaTeX 块级数学公式 \[...\] -> $$...$$
-        textContent = textContent.replace(/\\\((.*?)\\\)/g, '$$$1$$'); // LaTeX 行内数学公式 \(...\) -> $...$
 
         try {
             // 检查window.Lute是否存在
@@ -939,13 +957,6 @@
         await tick();
 
         try {
-            // 处理行内公式和块级公式
-            const mathElements = element.querySelectorAll(
-                '[data-subtype="math"]:not([data-math-rendered])'
-            );
-
-            if (mathElements.length === 0) return;
-
             // 确保 KaTeX 已加载
             if (!(window as any).katex) {
                 const loaded = await initKatex();
@@ -954,6 +965,13 @@
                     return;
                 }
             }
+
+            const katex = (window as any).katex;
+
+            // 处理 Lute 渲染的数学公式元素（带 data-subtype="math" 属性）
+            const mathElements = element.querySelectorAll(
+                '[data-subtype="math"]:not([data-math-rendered])'
+            );
 
             mathElements.forEach((mathElement: HTMLElement) => {
                 try {
@@ -971,6 +989,56 @@
                 } catch (error) {
                     console.error('Render math formula error:', error, mathElement);
                     // 即使渲染失败也标记，避免重复尝试
+                    mathElement.setAttribute('data-math-rendered', 'true');
+                }
+            });
+
+            // 处理可能遗漏的行内数学公式 span.katex
+            const inlineMathElements = element.querySelectorAll(
+                'span.katex:not([data-math-rendered])'
+            );
+
+            inlineMathElements.forEach((mathElement: HTMLElement) => {
+                try {
+                    const mathContent = mathElement.getAttribute('data-content');
+                    if (mathContent) {
+                        const html = katex.renderToString(mathContent, {
+                            throwOnError: false,
+                            displayMode: false,
+                            strict: (errorCode: string) =>
+                                errorCode === 'unicodeTextInMathMode' ? 'ignore' : 'warn',
+                            trust: true,
+                        });
+                        mathElement.innerHTML = html;
+                        mathElement.setAttribute('data-math-rendered', 'true');
+                    }
+                } catch (error) {
+                    console.error('Render inline math error:', error, mathElement);
+                    mathElement.setAttribute('data-math-rendered', 'true');
+                }
+            });
+
+            // 处理可能遗漏的块级数学公式 div.katex
+            const blockMathElements = element.querySelectorAll(
+                'div.katex:not([data-math-rendered])'
+            );
+
+            blockMathElements.forEach((mathElement: HTMLElement) => {
+                try {
+                    const mathContent = mathElement.getAttribute('data-content');
+                    if (mathContent) {
+                        const html = katex.renderToString(mathContent, {
+                            throwOnError: false,
+                            displayMode: true,
+                            strict: (errorCode: string) =>
+                                errorCode === 'unicodeTextInMathMode' ? 'ignore' : 'warn',
+                            trust: true,
+                        });
+                        mathElement.innerHTML = html;
+                        mathElement.setAttribute('data-math-rendered', 'true');
+                    }
+                } catch (error) {
+                    console.error('Render block math error:', error, mathElement);
                     mathElement.setAttribute('data-math-rendered', 'true');
                 }
             });
@@ -1669,9 +1737,12 @@
                         await scrollToBottom();
                     },
                     onComplete: (fullText: string) => {
+                        // 转换 LaTeX 数学公式格式为 Markdown 格式
+                        const convertedText = convertLatexToMarkdown(fullText);
+                        
                         const assistantMessage: Message = {
                             role: 'assistant',
-                            content: fullText,
+                            content: convertedText,
                         };
 
                         if (enableThinking && streamingThinking) {
