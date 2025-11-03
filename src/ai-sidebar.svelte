@@ -342,7 +342,7 @@
 
     // 处理键盘事件
     function handleKeydown(e: KeyboardEvent) {
-        if (e.key === 'Enter' && !e.shiftKey) {
+        if (e.key === 'Enter' && e.ctrlKey) {
             e.preventDefault();
             sendMessage();
         }
@@ -361,11 +361,8 @@
 
     // 复制单条消息
     function copyMessage(content: string, role: string) {
-        const roleText = role === 'user' ? '👤 **User**' : '🤖 **Assistant**';
-        const markdown = `${roleText}\n\n${content}`;
-
         navigator.clipboard
-            .writeText(markdown)
+            .writeText(content)
             .then(() => {
                 pushMsg('消息已复制');
             })
@@ -373,6 +370,12 @@
                 pushErrMsg('复制失败');
                 console.error('Copy failed:', err);
             });
+    }
+
+    // 处理消息框右键菜单
+    function handleContextMenu(event: MouseEvent, content: string, role: string) {
+        event.preventDefault();
+        copyMessage(content, role);
     }
 
     // 会话管理函数
@@ -552,7 +555,10 @@
 
     <div class="ai-sidebar__messages" bind:this={messagesContainer}>
         {#each messages.filter(msg => msg.role !== 'system') as message, index (index)}
-            <div class="ai-message ai-message--{message.role}">
+            <div 
+                class="ai-message ai-message--{message.role}"
+                on:contextmenu={(e) => handleContextMenu(e, message.content, message.role)}
+            >
                 <div class="ai-message__header">
                     <span class="ai-message__role">
                         {message.role === 'user' ? '👤 You' : '🤖 AI'}
@@ -572,7 +578,10 @@
         {/each}
 
         {#if isLoading && streamingMessage}
-            <div class="ai-message ai-message--assistant ai-message--streaming">
+            <div 
+                class="ai-message ai-message--assistant ai-message--streaming"
+                on:contextmenu={(e) => handleContextMenu(e, streamingMessage, 'assistant')}
+            >
                 <div class="ai-message__header">
                     <span class="ai-message__role">🤖 AI</span>
                     <span class="ai-message__streaming-indicator">●</span>
@@ -587,7 +596,7 @@
             <div class="ai-sidebar__empty">
                 <div class="ai-sidebar__empty-icon">💬</div>
                 <p>开始与 AI 对话吧！</p>
-                <p class="ai-sidebar__empty-hint">支持 Shift+Enter 换行</p>
+                <p class="ai-sidebar__empty-hint">Ctrl+Enter 发送消息</p>
             </div>
         {/if}
     </div>
@@ -598,7 +607,7 @@
                 bind:this={textareaElement}
                 bind:value={currentInput}
                 on:keydown={handleKeydown}
-                placeholder="输入消息... (Shift+Enter 换行)"
+                placeholder="输入消息... (Ctrl+Enter 发送)"
                 class="ai-sidebar__input"
                 disabled={isLoading}
                 rows="1"
@@ -607,7 +616,7 @@
                 class="b3-button b3-button--primary ai-sidebar__send-btn"
                 on:click={sendMessage}
                 disabled={isLoading || !currentInput.trim()}
-                title="发送消息 (Enter)"
+                title="发送消息 (Ctrl+Enter)"
             >
                 {#if isLoading}
                     <svg class="b3-button__icon ai-sidebar__loading-icon">
@@ -713,6 +722,13 @@
         flex-direction: column;
         gap: 8px;
         animation: fadeIn 0.3s ease-in;
+        cursor: context-menu;
+        
+        &:hover {
+            .ai-message__content {
+                box-shadow: 0 0 0 1px var(--b3-border-color);
+            }
+        }
     }
 
     @keyframes fadeIn {
