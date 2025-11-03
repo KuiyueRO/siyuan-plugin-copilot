@@ -266,6 +266,7 @@
         "default": "默认",
         "apiUrl": "API 地址",
         "apiUrlHint": "留空使用默认地址。以 / 结尾忽略 v1 版本，以 # 结尾强制使用输入地址",
+        "apiUrlPlaceholder": "输入自定义 API 地址",
         "builtin": "内置",
         "custom": "自定义"
     },

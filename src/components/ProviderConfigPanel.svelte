@@ -22,6 +22,7 @@
     let manualModelName = '';
     let isEditingName = false;
     let editingName = providerName;
+    let showApiKey = false; // 控制 API Key 是否显示明文
 
     // 获取模型列表
     async function loadModels() {
@@ -209,13 +210,33 @@
     <div class="provider-config__section">
         <div>
             <div class="b3-label__text">API Key</div>
-            <input
-                class="b3-text-field fn__flex-1"
-                type="password"
-                bind:value={config.apiKey}
-                on:change={() => dispatch('change')}
-                placeholder=""
-            />
+            <div class="api-key-input-wrapper">
+                {#if showApiKey}
+                    <input
+                        class="b3-text-field fn__flex-1"
+                        type="text"
+                        bind:value={config.apiKey}
+                        on:change={() => dispatch('change')}
+                        placeholder={t('settings.ai.apikey.description')}
+                    />
+                {:else}
+                    <input
+                        class="b3-text-field fn__flex-1"
+                        type="password"
+                        bind:value={config.apiKey}
+                        on:change={() => dispatch('change')}
+                        placeholder={t('settings.ai.apikey.description')}
+                    />
+                {/if}
+                <button
+                    class="b3-button b3-button--text api-key-toggle"
+                    on:click={() => (showApiKey = !showApiKey)}
+                >
+                    <svg class="b3-button__icon">
+                        <use xlink:href={showApiKey ? '#iconEye' : '#iconEyeoff'}></use>
+                    </svg>
+                </button>
+            </div>
         </div>
 
         <div>
@@ -228,9 +249,10 @@
             <input
                 class="b3-text-field fn__flex-1"
                 type="text"
+                style="width: 100%"
                 bind:value={config.customApiUrl}
                 on:change={() => dispatch('change')}
-                placeholder={defaultApiUrl || '输入自定义 API 地址'}
+                placeholder={defaultApiUrl || t('platform.apiUrlPlaceholder')}
             />
             <div class="b3-label__text label-description">
                 {t('platform.apiUrlHint')}
@@ -503,6 +525,23 @@
         display: flex;
         flex-direction: column;
         gap: 12px;
+    }
+
+    .api-key-input-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        width: 100%;
+    }
+
+    .api-key-toggle {
+        flex-shrink: 0;
+        opacity: 0.6;
+        transition: opacity 0.2s;
+
+        &:hover {
+            opacity: 1;
+        }
     }
 
     .provider-config__model-buttons {

@@ -267,6 +267,7 @@
         "default": "Default",
         "apiUrl": "API URL",
         "apiUrlHint": "Leave blank to use default address. Ending with / ignores v1 version, ending with # forces the input address",
+        "apiUrlPlaceholder": "Enter custom API URL",
         "builtin": "Built-in",
         "custom": "Custom"
     },
