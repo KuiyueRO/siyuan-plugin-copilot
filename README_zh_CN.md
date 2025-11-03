@@ -99,6 +99,7 @@ MIT License
 ## 🙏 致谢
 
 - 基于 [plugin-sample-vite-svelte](https://github.com/siyuan-note/plugin-sample-vite-svelte/) 模板开发
+- 参考 [sy-f-misc](https://github.com/frostime/sy-f-misc)的GPT对话功能实现
 
 
 ## 📮 反馈与建议
