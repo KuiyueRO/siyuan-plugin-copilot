@@ -58,6 +58,9 @@ export const getDefaultSettings = () => ({
     currentModelId: '' as string,
     aiSystemPrompt: 'You are a helpful AI assistant.',
 
+    // 操作设置
+    sendMessageShortcut: 'ctrl+enter' as 'ctrl+enter' | 'enter', // 发送消息的快捷键
+
     // 保留旧设置以便兼容升级
     aiProvider: 'openai',
     aiApiKey: '',

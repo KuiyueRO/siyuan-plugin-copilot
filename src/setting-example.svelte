@@ -166,8 +166,9 @@
                     description: '设置 AI 的角色和行为',
                     direction: 'row',
                     rows: 4,
-                    placeholder: 'You are a helpful AI assistant.',
+                    description: 'You are a helpful AI assistant.',
                 },
+
                 {
                     key: 'aiProvidersHint',
                     value: '',
@@ -175,6 +176,22 @@
                     title: '平台配置说明',
                     description:
                         '为每个AI平台配置API Key，然后获取并添加模型。支持每个平台配置多个模型，每个模型可以设置独立的参数。',
+                },
+            ],
+        },
+        {
+            name: '操作设置',
+            items: [
+                {
+                    key: 'sendMessageShortcut',
+                    value: settings.sendMessageShortcut,
+                    type: 'select',
+                    title: '发送消息快捷键',
+                    description: '选择发送消息的快捷键方式',
+                    options: {
+                        'ctrl+enter': 'Ctrl + Enter发送，Enter换行',
+                        enter: 'Enter发送，Shift + Enter换行',
+                    },
                 },
             ],
         },

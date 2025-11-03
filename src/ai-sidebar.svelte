@@ -270,8 +270,6 @@
                     mimeType: file.type,
                 },
             ];
-
-            pushMsg(`已添加图片: ${file.name}`);
         } catch (error) {
             console.error('Add image error:', error);
             pushErrMsg('添加图片失败');
@@ -323,8 +321,6 @@
                         mimeType: file.type,
                     },
                 ];
-
-                pushMsg(`已添加文件: ${file.name}`);
             }
         } catch (error) {
             console.error('Add file error:', error);
@@ -370,7 +366,6 @@
     // 移除附件
     function removeAttachment(index: number) {
         currentAttachments = currentAttachments.filter((_, i) => i !== index);
-        pushMsg('已移除附件');
     }
 
     // 处理消息容器的滚动：当用户手动滚动到非底部位置时，禁用自动滚动
@@ -405,8 +400,6 @@
         settings.currentProvider = provider;
         settings.currentModelId = modelId;
         plugin.saveSettings(settings);
-
-        pushMsg(`已切换到 ${modelId}`);
     }
 
     // 获取当前提供商配置
@@ -675,7 +668,6 @@
             isThinkingPhase = false;
             isLoading = false;
             abortController = null;
-            pushMsg('已中断消息生成');
         }
     }
 
@@ -731,12 +723,29 @@
 
     // 处理键盘事件
     function handleKeydown(e: KeyboardEvent) {
-        if (e.key === 'Enter' && e.ctrlKey) {
-            e.preventDefault();
-            if (isLoading) {
-                abortMessage();
-            } else {
-                sendMessage();
+        const sendMode = settings.sendMessageShortcut || 'ctrl+enter';
+
+        if (sendMode === 'ctrl+enter') {
+            // Ctrl+Enter 发送模式
+            if (e.key === 'Enter' && e.ctrlKey) {
+                e.preventDefault();
+                if (isLoading) {
+                    abortMessage();
+                } else {
+                    sendMessage();
+                }
+                return;
+            }
+        } else {
+            // Enter 发送模式（Shift+Enter 换行）
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (isLoading) {
+                    abortMessage();
+                } else {
+                    sendMessage();
+                }
+                return;
             }
         }
     }
@@ -966,7 +975,6 @@
                         content: data.content,
                     },
                 ];
-                pushMsg(`已添加文档: ${docTitle}`);
                 isSearchDialogOpen = false;
                 searchKeyword = '';
                 searchResults = [];
@@ -1074,7 +1082,6 @@
                         content: data.content,
                     },
                 ];
-                pushMsg(`已添加块内容: ${displayTitle}`);
             }
         } catch (error) {
             console.error('Add block error:', error);
@@ -1085,7 +1092,6 @@
     // 删除上下文文档
     function removeContextDocument(docId: string) {
         contextDocuments = contextDocuments.filter(doc => doc.id !== docId);
-        pushMsg('已移除文档');
     }
 
     // 打开文档
@@ -1224,7 +1230,6 @@
 
         await saveSessions();
         hasUnsavedChanges = false;
-        pushMsg('会话已保存');
     }
 
     async function loadSession(sessionId: string) {
@@ -1266,7 +1271,6 @@
             currentSessionId = sessionId;
             hasUnsavedChanges = false;
             await scrollToBottom(true);
-            pushMsg(`已加载会话: ${session.title}`);
         }
     }
 
@@ -1289,7 +1293,6 @@
             : [];
         currentSessionId = '';
         hasUnsavedChanges = false;
-        pushMsg('已创建新会话');
     }
 
     async function deleteSession(sessionId: string) {
@@ -1300,8 +1303,6 @@
             if (currentSessionId === sessionId) {
                 doNewSession();
             }
-
-            pushMsg('会话已删除');
         });
     }
 
@@ -1362,7 +1363,6 @@
                     content: newPromptContent.trim(),
                 };
                 prompts = [...prompts];
-                pushMsg('提示词已更新');
             }
         } else {
             // 创建新提示词
@@ -1373,7 +1373,6 @@
                 createdAt: now,
             };
             prompts = [newPrompt, ...prompts];
-            pushMsg('提示词已保存');
         }
 
         await savePrompts();
@@ -1392,7 +1391,6 @@
         confirm('删除提示词', '确定要删除这个提示词吗？', async () => {
             prompts = prompts.filter(p => p.id !== promptId);
             await savePrompts();
-            pushMsg('提示词已删除');
         });
     }
 
@@ -1403,7 +1401,6 @@
             autoResizeTextarea();
             textareaElement?.focus();
         });
-        pushMsg(`已使用提示词: ${prompt.title}`);
     }
 
     // 点击外部关闭提示词选择器
@@ -1685,7 +1682,7 @@
                     bind:value={currentInput}
                     on:keydown={handleKeydown}
                     on:paste={handlePaste}
-                    placeholder="输入消息... (Ctrl+Enter 发送，可拖入文档、块或粘贴图片)"
+                    placeholder="输入消息... (可拖入文档、块或粘贴图片)"
                     class="ai-sidebar__input"
                     disabled={isLoading}
                     rows="1"
@@ -1696,7 +1693,7 @@
                     class:ai-sidebar__send-btn--abort={isLoading}
                     on:click={isLoading ? abortMessage : sendMessage}
                     disabled={!isLoading && !currentInput.trim() && currentAttachments.length === 0}
-                    title={isLoading ? '中断生成 (Ctrl+Enter)' : '发送消息 (Ctrl+Enter)'}
+                    title={isLoading ? '中断生成' : '发送消息'}
                 >
                     {#if isLoading}
                         <svg class="b3-button__icon">
