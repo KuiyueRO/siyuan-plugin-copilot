@@ -615,7 +615,13 @@
                     onError: (error: Error) => {
                         // 如果是主动中断，不显示错误
                         if (error.message !== 'Request aborted') {
-                            pushErrMsg(`AI 请求失败: ${error.message}`);
+                            // 将错误消息作为一条 assistant 消息添加
+                            const errorMessage: Message = {
+                                role: 'assistant',
+                                content: `❌ **${t('aiSidebar.errors.requestFailed')}**\n\n${error.message}`,
+                            };
+                            messages = [...messages, errorMessage];
+                            hasUnsavedChanges = true;
                         }
                         isLoading = false;
                         streamingMessage = '';
@@ -628,8 +634,22 @@
             );
         } catch (error) {
             console.error('Send message error:', error);
-            // 如果是中断错误，不需要额外处理
-            if ((error as Error).name !== 'AbortError') {
+            // onError 回调已经处理了错误消息的添加，这里不需要重复添加
+            // 只需要在 onError 没有被调用的情况下（比如网络错误导致的异常）清理状态
+            if ((error as Error).name === 'AbortError') {
+                // 中断错误已经在 abortMessage 中处理
+            } else if (!isLoading) {
+                // 如果 isLoading 已经是 false，说明 onError 已经被调用并处理了
+                // 不需要做任何事情
+            } else {
+                // 如果 isLoading 还是 true，说明 onError 没有被调用
+                // 这种情况下才需要添加错误消息（比如网络请求失败）
+                const errorMessage: Message = {
+                    role: 'assistant',
+                    content: `❌ **${t('aiSidebar.errors.requestFailed')}**\n\n${(error as Error).message}`,
+                };
+                messages = [...messages, errorMessage];
+                hasUnsavedChanges = true;
                 isLoading = false;
                 streamingMessage = '';
                 streamingThinking = '';
@@ -1759,7 +1779,13 @@
                     },
                     onError: (error: Error) => {
                         if (error.message !== 'Request aborted') {
-                            pushErrMsg(`AI 请求失败: ${error.message}`);
+                            // 将错误消息作为一条 assistant 消息添加
+                            const errorMessage: Message = {
+                                role: 'assistant',
+                                content: `❌ **${t('aiSidebar.errors.requestFailed')}**\n\n${error.message}`,
+                            };
+                            messages = [...messages, errorMessage];
+                            hasUnsavedChanges = true;
                         }
                         isLoading = false;
                         streamingMessage = '';
@@ -1772,7 +1798,21 @@
             );
         } catch (error) {
             console.error('Regenerate message error:', error);
-            if ((error as Error).name !== 'AbortError') {
+            // onError 回调已经处理了错误消息的添加，这里不需要重复添加
+            if ((error as Error).name === 'AbortError') {
+                // 中断错误已经在 abortMessage 中处理
+            } else if (!isLoading) {
+                // 如果 isLoading 已经是 false，说明 onError 已经被调用并处理了
+                // 不需要做任何事情
+            } else {
+                // 如果 isLoading 还是 true，说明 onError 没有被调用
+                // 这种情况下才需要添加错误消息
+                const errorMessage: Message = {
+                    role: 'assistant',
+                    content: `❌ **${t('aiSidebar.errors.requestFailed')}**\n\n${(error as Error).message}`,
+                };
+                messages = [...messages, errorMessage];
+                hasUnsavedChanges = true;
                 isLoading = false;
                 streamingMessage = '';
                 streamingThinking = '';

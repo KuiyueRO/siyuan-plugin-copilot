@@ -205,7 +205,8 @@
             "addBlockContentFailed": "Failed to add block",
             "openDocumentFailed": "Failed to open document",
             "generating": "Generating in progress, please wait...",
-            "noUserMessage": "No user message found"
+            "noUserMessage": "No user message found",
+            "requestFailed": "AI Request Failed"
         },
         "success": {
             "copySuccess": "Message copied",

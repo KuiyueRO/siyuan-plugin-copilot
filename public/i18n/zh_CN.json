@@ -204,7 +204,8 @@
             "addBlockContentFailed": "添加块失败",
             "openDocumentFailed": "打开文档失败",
             "generating": "正在生成中，请稍候...",
-            "noUserMessage": "没有找到用户消息"
+            "noUserMessage": "没有找到用户消息",
+            "requestFailed": "AI 请求失败"
         },
         "success": {
             "copySuccess": "消息已复制",
