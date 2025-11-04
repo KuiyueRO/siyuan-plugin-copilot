@@ -2952,6 +2952,11 @@
                 font-size: 1em;
             }
 
+            // 确保 katex-display 内部的 katex-html 显示为块级元素
+            :global(.katex-display > .katex > .katex-html) {
+                display: block !important;
+            }
+
             // 列表样式
             :global(ul),
             :global(ol) {
