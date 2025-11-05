@@ -240,7 +240,7 @@
             },
             "deletePlatform": {
                 "title": "Delete Platform",
-                "message": "Are you sure to delete platform \"{platformName}\"?"
+                "message": "Are you sure to delete platform \"${platformName}\"?"
             },
             "deleteMessage": {
                 "title": "Delete Message",

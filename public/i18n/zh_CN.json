@@ -239,7 +239,7 @@
             },
             "deletePlatform": {
                 "title": "删除平台",
-                "message": "确定要删除平台 \"{platformName}\" 吗？"
+                "message": "确定要删除平台 \"${platformName}\" 吗？"
             },
             "deleteMessage": {
                 "title": "删除消息",

@@ -24,6 +24,62 @@
     let editingName = providerName;
     let showApiKey = false; // 控制 API Key 是否显示明文
 
+    // 生成 API 地址预览（参考 cherry studio 的行为）
+    function buildApiPreview(raw: string) {
+        if (!raw) return '';
+        let s = raw.trim();
+
+        // 去除 fragment（# 及后面的内容）
+        const hashIndex = s.indexOf('#');
+        if (hashIndex !== -1) s = s.slice(0, hashIndex);
+        s = s.trim();
+        if (!s) return '';
+
+        // 如果没有协议，尝试补 https://
+        try {
+            // 如果是相对路径或缺少协议，new URL 会抛错
+            new URL(s);
+        } catch (e) {
+            try {
+                s = 'https://' + s;
+                new URL(s);
+            } catch (e2) {
+                // 仍然无法解析，直接返回原始处理后的字符串
+                return s;
+            }
+        }
+
+        // 如果以 / 结尾，则直接展示（忽略自动追加 v1）
+        if (s.endsWith('/')) {
+            return s;
+        }
+
+        // 使用 URL 解析以便检查 path
+        try {
+            const u = new URL(s);
+            const path = u.pathname || '';
+
+            // 如果根路径（没有 path 或者只是 "/"），则追加 /v1/chat/completions
+            if (!path || path === '/') {
+                return s + '/v1/chat/completions';
+            }
+
+            // 如果 path 中已经包含 v1，则只追加 chat/completions（避免重复 v1）
+            if (path.includes('/v1')) {
+                if (s.endsWith('/chat/completions')) return s;
+                return s + (s.endsWith('/') ? '' : '/chat/completions');
+            }
+
+            // 对于其它自定义 path，追加 /v1/chat/completions
+            return s + '/v1/chat/completions';
+        } catch (e) {
+            return s;
+        }
+    }
+
+    // 响应式预览值：优先使用用户输入的 customApiUrl，否则使用默认 API 地址做示例
+    $: apiPreview = buildApiPreview(config.customApiUrl || defaultApiUrl || '');
+
     // 获取模型列表
     async function loadModels() {
         if (!config.apiKey) {
@@ -254,6 +310,11 @@
                 on:change={() => dispatch('change')}
                 placeholder={defaultApiUrl || t('platform.apiUrlPlaceholder')}
             />
+            {#if apiPreview}
+                <div class="api-preview">
+                    <div class="api-preview__url">{apiPreview}</div>
+                </div>
+            {/if}
             <div class="b3-label__text label-description">
                 {t('platform.apiUrlHint')}
             </div>
@@ -543,6 +604,24 @@
         &:hover {
             opacity: 1;
         }
+    }
+
+    .api-preview {
+        margin-top: 8px;
+        font-size: 12px;
+        color: var(--b3-theme-on-surface-light);
+        word-break: break-all;
+        background: var(--b3-theme-surface);
+        padding: 6px;
+        border-radius: 4px;
+        border: 1px solid var(--b3-border-color);
+    }
+
+    .api-preview__url {
+        margin-top: 4px;
+        color: var(--b3-theme-on-surface);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Segoe UI Mono", monospace;
+        font-size: 13px;
     }
 
     .provider-config__model-buttons {
