@@ -110,25 +110,42 @@ const PROVIDER_CONFIGS: Record<AIProvider, ProviderConfig> = {
 };
 
 /**
- * 标准化API地址
- * @param url 用户输入的API地址
- * @returns 标准化后的地址和是否强制使用
+ * 根据自定义API URL和默认端点，获取基础URL和实际端点
+ * @param customApiUrl 用户输入的自定义API URL
+ * @param defaultEndpoint 默认的端点 (e.g., '/v1/models', '/v1/chat/completions')
+ * @returns {baseUrl: string, endpoint: string}
+ * 
+ * 规则说明：
+ * 1. 以 '/' 结尾：去掉 /v1 前缀，保留后续路径
+ *    例如：https://text.pollinations.ai/openai/ + /v1/models -> https://text.pollinations.ai/openai/models
+ * 2. 以 '#' 结尾：强制使用输入地址，完全不拼接端点路径
+ *    例如：https://text.pollinations.ai/openai# + /v1/models -> https://text.pollinations.ai/openai
+ * 3. 其他情况：使用完整的默认端点
+ *    例如：https://api.openai.com + /v1/models -> https://api.openai.com/v1/models
  */
-function normalizeApiUrl(url: string): { url: string; force: boolean } {
-    if (!url) return { url: '', force: false };
+function getBaseUrlAndEndpoint(
+    customApiUrl: string,
+    defaultEndpoint: string
+): { baseUrl: string; endpoint: string } {
+    const trimmedUrl = (customApiUrl || '').trim();
 
-    const force = url.endsWith('#');
-    url = url.replace(/#$/, '');
-
-    // 移除末尾的斜杠
-    url = url.replace(/\/$/, '');
-
-    // 如果不是强制使用，移除 /v1
-    if (!force) {
-        url = url.replace(/\/v1$/, '');
+    // 规则2：以 '#' 结尾，强制使用输入地址，不拼接任何端点
+    if (trimmedUrl.endsWith('#')) {
+        const baseUrl = trimmedUrl.slice(0, -1); // 移除 '#'
+        return { baseUrl, endpoint: '' }; // endpoint 为空，直接使用 baseUrl
     }
 
-    return { url, force };
+    // 规则1：以 '/' 结尾，去掉 /v1 前缀，保留后续路径
+    if (trimmedUrl.endsWith('/')) {
+        const baseUrl = trimmedUrl.slice(0, -1); // 移除 '/'
+        const endpoint = defaultEndpoint.startsWith('/v1')
+            ? defaultEndpoint.substring(3) // 去掉 /v1，例如 /v1/models -> /models
+            : defaultEndpoint;
+        return { baseUrl, endpoint };
+    }
+
+    // 规则3：默认情况，使用完整的默认端点
+    return { baseUrl: trimmedUrl.replace(/\/$/, ''), endpoint: defaultEndpoint };
 }
 
 /**
@@ -139,43 +156,20 @@ export async function fetchModels(
     apiKey: string,
     customApiUrl?: string
 ): Promise<ModelInfo[]> {
-    // 检查是否是内置平台
-    const builtInProviders: Record<string, boolean> = {
-        gemini: true,
-        deepseek: true,
-        openai: true,
-        volcano: true
-    };
+    const isBuiltIn = ['gemini', 'deepseek', 'openai', 'volcano'].includes(provider);
+    const config = isBuiltIn ? PROVIDER_CONFIGS[provider as AIProvider] : PROVIDER_CONFIGS.custom;
 
-    let config: ProviderConfig;
-    let baseUrl: string;
+    let url: string;
 
-    if (builtInProviders[provider]) {
-        config = PROVIDER_CONFIGS[provider as AIProvider];
-        baseUrl = config.baseUrl;
-
-        if (provider === 'custom' && customApiUrl) {
-            const normalized = normalizeApiUrl(customApiUrl);
-            baseUrl = normalized.url;
-        }
+    if (customApiUrl) {
+        const { baseUrl, endpoint } = getBaseUrlAndEndpoint(customApiUrl, config.modelsEndpoint);
+        url = `${baseUrl}${endpoint}`;
     } else {
-        // 自定义平台
-        if (!customApiUrl) {
+        if (!isBuiltIn) {
             throw new Error('Custom provider requires API URL');
         }
-
-        const normalized = normalizeApiUrl(customApiUrl);
-        baseUrl = normalized.url;
-        config = {
-            name: 'Custom',
-            baseUrl: baseUrl,
-            modelsEndpoint: '/v1/models',
-            chatEndpoint: '/v1/chat/completions',
-            apiKeyHeader: 'Authorization'
-        };
+        url = `${config.baseUrl}${config.modelsEndpoint}`;
     }
-
-    const url = `${baseUrl}${config.modelsEndpoint}`;
 
     try {
         const headers: Record<string, string> = {
@@ -224,12 +218,11 @@ export async function fetchModels(
  * 发送聊天请求 (OpenAI 格式)
  */
 async function chatOpenAIFormat(
-    baseUrl: string,
+    url: string,
     apiKey: string,
-    endpoint: string,
     options: ChatOptions
 ): Promise<void> {
-    const url = `${baseUrl}${endpoint}`;
+    
 
     // 转换消息格式以支持多模态
     const formattedMessages = options.messages.map(msg => ({
@@ -567,47 +560,28 @@ export async function chat(
     options: ChatOptions,
     customApiUrl?: string
 ): Promise<void> {
-    // 检查是否是内置平台
-    const builtInProviders: Record<string, boolean> = {
-        gemini: true,
-        deepseek: true,
-        openai: true,
-        volcano: true
-    };
+    const isBuiltIn = ['gemini', 'deepseek', 'openai', 'volcano'].includes(provider);
+    const config = isBuiltIn ? PROVIDER_CONFIGS[provider as AIProvider] : PROVIDER_CONFIGS.custom;
 
-    let config: ProviderConfig;
-    let baseUrl: string;
+    let url: string;
+    let baseUrlForGemini: string; // Gemini format needs a base url
 
-    if (builtInProviders[provider]) {
-        // 使用内置平台配置
-        config = PROVIDER_CONFIGS[provider as AIProvider];
-        baseUrl = config.baseUrl;
-
-        if (provider === 'custom' && customApiUrl) {
-            const normalized = normalizeApiUrl(customApiUrl);
-            baseUrl = normalized.url;
-        }
+    if (customApiUrl) {
+        const { baseUrl, endpoint } = getBaseUrlAndEndpoint(customApiUrl, config.chatEndpoint);
+        url = `${baseUrl}${endpoint}`;
+        baseUrlForGemini = baseUrl;
     } else {
-        // 自定义平台，使用OpenAI兼容格式
-        if (!customApiUrl) {
+        if (!isBuiltIn && provider !== 'custom') { // custom provider is a special case of built-in
             throw new Error('Custom provider requires API URL');
         }
-
-        const normalized = normalizeApiUrl(customApiUrl);
-        baseUrl = normalized.url;
-        config = {
-            name: 'Custom',
-            baseUrl: baseUrl,
-            modelsEndpoint: '/v1/models',
-            chatEndpoint: '/v1/chat/completions',
-            apiKeyHeader: 'Authorization'
-        };
+        url = `${config.baseUrl}${config.chatEndpoint}`;
+        baseUrlForGemini = config.baseUrl;
     }
 
     if (provider === 'gemini') {
-        await chatGeminiFormat(baseUrl, options.apiKey, options.model, options);
+        await chatGeminiFormat(baseUrlForGemini, options.apiKey, options.model, options);
     } else {
-        await chatOpenAIFormat(baseUrl, options.apiKey, config.chatEndpoint, options);
+        await chatOpenAIFormat(url, options.apiKey, options);
     }
 }
 

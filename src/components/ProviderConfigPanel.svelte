@@ -24,57 +24,52 @@
     let editingName = providerName;
     let showApiKey = false; // 控制 API Key 是否显示明文
 
-    // 生成 API 地址预览（参考 cherry studio 的行为）
+    // 生成 API 地址预览
+    // 规则说明：
+    // 1. 以 '/' 结尾：去掉 /v1 前缀，保留后续路径
+    //    例如：https://text.pollinations.ai/openai/ -> https://text.pollinations.ai/openai/chat/completions
+    // 2. 以 '#' 结尾：强制使用输入地址，完全不拼接端点路径
+    //    例如：https://text.pollinations.ai/openai# -> https://text.pollinations.ai/openai
+    // 3. 其他情况：使用完整的默认端点
+    //    例如：https://api.openai.com -> https://api.openai.com/v1/chat/completions
     function buildApiPreview(raw: string) {
         if (!raw) return '';
         let s = raw.trim();
 
-        // 去除 fragment（# 及后面的内容）
-        const hashIndex = s.indexOf('#');
-        if (hashIndex !== -1) s = s.slice(0, hashIndex);
-        s = s.trim();
-        if (!s) return '';
+        // 记录原始结尾标记
+        const endsWithHash = s.endsWith('#');
+        const endsWithSlash = s.endsWith('/');
 
-        // 如果没有协议，尝试补 https://
+        // 移除结尾标记
+        if (endsWithHash) {
+            s = s.slice(0, -1);
+        } else if (endsWithSlash) {
+            s = s.slice(0, -1);
+        }
+
+        // 补全协议
+        if (!/^https?:\/\//.test(s)) {
+            s = 'https://' + s;
+        }
+
         try {
-            // 如果是相对路径或缺少协议，new URL 会抛错
             new URL(s);
         } catch (e) {
-            try {
-                s = 'https://' + s;
-                new URL(s);
-            } catch (e2) {
-                // 仍然无法解析，直接返回原始处理后的字符串
-                return s;
-            }
+            return s; // 无效URL
         }
 
-        // 如果以 / 结尾，则直接展示（忽略自动追加 v1）
-        if (s.endsWith('/')) {
+        // 规则2：以 '#' 结尾，强制使用输入地址，不拼接任何路径
+        if (endsWithHash) {
             return s;
         }
 
-        // 使用 URL 解析以便检查 path
-        try {
-            const u = new URL(s);
-            const path = u.pathname || '';
-
-            // 如果根路径（没有 path 或者只是 "/"），则追加 /v1/chat/completions
-            if (!path || path === '/') {
-                return s + '/v1/chat/completions';
-            }
-
-            // 如果 path 中已经包含 v1，则只追加 chat/completions（避免重复 v1）
-            if (path.includes('/v1')) {
-                if (s.endsWith('/chat/completions')) return s;
-                return s + (s.endsWith('/') ? '' : '/chat/completions');
-            }
-
-            // 对于其它自定义 path，追加 /v1/chat/completions
-            return s + '/v1/chat/completions';
-        } catch (e) {
-            return s;
+        // 规则1：以 '/' 结尾，去掉 /v1 前缀
+        if (endsWithSlash) {
+            return s + '/chat/completions';
         }
+
+        // 规则3：默认情况，拼接完整路径
+        return s + '/v1/chat/completions';
     }
 
     // 响应式预览值：优先使用用户输入的 customApiUrl，否则使用默认 API 地址做示例
