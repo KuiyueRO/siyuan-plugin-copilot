@@ -77,6 +77,7 @@
 
     // 中断控制
     let abortController: AbortController | null = null;
+    let isAborted = false; // 标记是否已中断，防止中断后 onComplete 重复添加消息
 
     // 自动滚动控制
     let autoScroll = true;
@@ -611,6 +612,7 @@
         currentAttachments = [];
         contextDocuments = []; // 发送后清空全局上下文
         isLoading = true;
+        isAborted = false; // 重置中断标志
         streamingMessage = '';
         streamingThinking = '';
         isThinkingPhase = false;
@@ -1173,6 +1175,13 @@
                                 await scrollToBottom();
                             },
                             onComplete: async (fullText: string) => {
+                                // 如果已经中断，不再添加消息（避免重复）
+                                if (isAborted) {
+                                    shouldContinue = false;
+                                    toolExecutionComplete?.();
+                                    return;
+                                }
+
                                 // 如果没有收到工具调用，说明对话结束
                                 if (!receivedToolCalls) {
                                     shouldContinue = false;
@@ -1281,6 +1290,11 @@
                             await scrollToBottom();
                         },
                         onComplete: async (fullText: string) => {
+                            // 如果已经中断，不再添加消息（避免重复）
+                            if (isAborted) {
+                                return;
+                            }
+
                             // 转换 LaTeX 数学公式格式为 Markdown 格式
                             const convertedText = convertLatexToMarkdown(fullText);
 
@@ -1414,6 +1428,8 @@
     function abortMessage() {
         if (abortController) {
             abortController.abort();
+            isAborted = true; // 设置中断标志，防止 onComplete 再次添加消息
+
             // 如果有已生成的部分，将其保存为消息
             if (streamingMessage || streamingThinking) {
                 // 先保存到临时变量
@@ -2982,6 +2998,7 @@
 
         // 重新发送请求
         isLoading = true;
+        isAborted = false; // 重置中断标志
         streamingMessage = '';
         streamingThinking = '';
         isThinkingPhase = false;
@@ -3268,6 +3285,11 @@
                         await scrollToBottom();
                     },
                     onComplete: async (fullText: string) => {
+                        // 如果已经中断，不再添加消息（避免重复）
+                        if (isAborted) {
+                            return;
+                        }
+
                         // 转换 LaTeX 数学公式格式为 Markdown 格式
                         const convertedText = convertLatexToMarkdown(fullText);
 
