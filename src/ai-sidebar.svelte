@@ -6426,6 +6426,8 @@
         padding: 8px 12px;
         border-bottom: 1px solid var(--b3-border-color);
         flex-shrink: 0;
+        min-width: 0; /* 允许在flex布局中缩小 */
+        overflow: hidden; /* 防止内容溢出 */
     }
 
     .ai-sidebar__title {
@@ -6436,18 +6438,27 @@
         display: flex;
         align-items: center;
         gap: 8px;
+        flex-shrink: 1; /* 标题可以缩小 */
+        min-width: 0; /* 允许标题缩小 */
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     .ai-sidebar__unsaved {
         color: var(--b3-theme-primary);
         font-size: 12px;
         animation: pulse 2s ease-in-out infinite;
+        flex-shrink: 0; /* 防止未保存标记被压缩 */
     }
 
     .ai-sidebar__actions {
         display: flex;
         align-items: center;
         gap: 4px;
+        flex-shrink: 0; /* 操作按钮不缩小 */
+        flex-wrap: wrap; /* 在窄宽度下换行 */
+        justify-content: flex-end;
     }
 
     .ai-sidebar__open-window-menu-container {
