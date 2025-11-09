@@ -33,6 +33,7 @@
     import MultiModelSelector from './components/MultiModelSelector.svelte';
     import SessionManager from './components/SessionManager.svelte';
     import ToolSelector, { type ToolConfig } from './components/ToolSelector.svelte';
+    import ModelSettingsButton from './components/ModelSettingsButton.svelte';
     import type { ProviderConfig } from './defaultSettings';
     import { settingsStore } from './stores/settings';
     import { confirm, Constants } from 'siyuan';
@@ -130,6 +131,13 @@
 
     // 显示设置
     let messageFontSize = 12;
+
+    // 模型临时设置
+    let tempModelSettings = {
+        contextCount: 10,
+        temperature: 0.7,
+        systemPrompt: '',
+    };
 
     // 编辑模式
     type ChatMode = 'ask' | 'edit' | 'agent';
@@ -657,12 +665,23 @@
     function handleToggleMultiModel(event: CustomEvent<boolean>) {
         enableMultiModel = event.detail;
 
-        // 如果禁用多模型，清除相关状态
+        // 如果禁用多模型,清除相关状态
         if (!enableMultiModel) {
             multiModelResponses = [];
             isWaitingForAnswerSelection = false;
             selectedAnswerIndex = null;
         }
+    }
+
+    // 处理模型设置应用
+    function handleApplyModelSettings(
+        event: CustomEvent<{
+            contextCount: number;
+            temperature: number;
+            systemPrompt: string;
+        }>
+    ) {
+        tempModelSettings = event.detail;
     }
 
     // 获取当前提供商配置
@@ -800,7 +819,7 @@
                         apiKey: providerConfig.apiKey,
                         model: modelConfig.id,
                         messages: messagesToSend,
-                        temperature: modelConfig.temperature,
+                        temperature: tempModelSettings.temperature,
                         maxTokens: modelConfig.maxTokens > 0 ? modelConfig.maxTokens : undefined,
                         stream: true,
                         enableThinking: modelConfig.capabilities?.thinking || false,
@@ -1603,6 +1622,23 @@
             messagesToSend.unshift({ role: 'system', content: settings.aiSystemPrompt });
         }
 
+        // 使用临时系统提示词（如果设置了）
+        if (tempModelSettings.systemPrompt.trim()) {
+            // 如果已有系统提示词，替换它；否则添加新的
+            const systemMsgIndex = messagesToSend.findIndex(msg => msg.role === 'system');
+            if (systemMsgIndex !== -1) {
+                messagesToSend[systemMsgIndex].content = tempModelSettings.systemPrompt;
+            } else {
+                messagesToSend.unshift({ role: 'system', content: tempModelSettings.systemPrompt });
+            }
+        }
+
+        // 限制上下文消息数量
+        const systemMessages = messagesToSend.filter(msg => msg.role === 'system');
+        const otherMessages = messagesToSend.filter(msg => msg.role !== 'system');
+        const limitedMessages = otherMessages.slice(-tempModelSettings.contextCount);
+        messagesToSend = [...systemMessages, ...limitedMessages];
+
         // 创建新的 AbortController
         abortController = new AbortController();
 
@@ -1640,7 +1676,7 @@
                             apiKey: providerConfig.apiKey,
                             model: modelConfig.id,
                             messages: messagesToSend,
-                            temperature: modelConfig.temperature,
+                            temperature: tempModelSettings.temperature,
                             maxTokens:
                                 modelConfig.maxTokens > 0 ? modelConfig.maxTokens : undefined,
                             stream: true,
@@ -1885,7 +1921,7 @@
                         apiKey: providerConfig.apiKey,
                         model: modelConfig.id,
                         messages: messagesToSend,
-                        temperature: modelConfig.temperature,
+                        temperature: tempModelSettings.temperature,
                         maxTokens: modelConfig.maxTokens > 0 ? modelConfig.maxTokens : undefined,
                         stream: true,
                         signal: abortController.signal,
@@ -6115,6 +6151,14 @@
                     <svg class="b3-button__icon"><use xlink:href="#iconQuote"></use></svg>
                 </button>
             </div>
+            <!-- 模型设置按钮 -->
+            <ModelSettingsButton
+                {providers}
+                {currentProvider}
+                {currentModelId}
+                appliedSettings={tempModelSettings}
+                on:apply={handleApplyModelSettings}
+            />
             {#if !(chatMode === 'ask' && enableMultiModel)}
                 <div class="ai-sidebar__model-selector-container">
                     <ModelSelector
