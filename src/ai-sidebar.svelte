@@ -1120,11 +1120,13 @@
         // 创建assistant消息，包含多模型完整结果
         const assistantMessage: Message = {
             role: 'assistant',
-            content: selectedResponse.content || '', // 保存被选中的内容，以便复制、编辑等操作
-            thinking: selectedResponse.thinking, // 保存思考内容
+            content: '', // 不显示单独的内容，只显示多模型页签
+            thinking: '', // 保存思考内容
             multiModelResponses: multiModelResponses.map((response, i) => ({
                 ...response,
-                isSelected: i === index, // 标记哪个被选择
+                isSelected: i === index, // 标记哪个被选择,
+                modelName: i === index ? ' ✅' + response.modelName : response.modelName, // 选择的模型名添加✅
+
             })),
         };
 
@@ -2201,6 +2203,8 @@
                     multiModelResponses: multiModelResponses.map((response, i) => ({
                         ...response,
                         isSelected: i === firstSuccessIndex,
+                        modelName: i === firstSuccessIndex ? ' ✅' + response.modelName : response.modelName, // 选择的模型名添加✅
+
                     })),
                 };
 
@@ -3455,6 +3459,10 @@
                     multiModelResponses: multiModelResponses.map((response, i) => ({
                         ...response,
                         isSelected: i === firstSuccessIndex,
+                        modelName:
+                            i === firstSuccessIndex
+                                ? '✅' + response.modelName
+                                : response.modelName,
                     })),
                 };
 
