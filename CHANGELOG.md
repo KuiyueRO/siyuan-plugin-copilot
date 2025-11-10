@@ -1,3 +1,10 @@
+## v0.4.5/ 20251110
+
+- 🐛 fix(复制功能): 优化插件内复制行为
+  - 仅在插件消息容器内处理复制，避免影响全局复制
+  - 确保选区位于消息内容元素内
+  - 保留默认复制行为当消息容器不存在
+
 ## v0.4.4 / 20251110
 - 💄 多模型dropdown窗口优化 [#44](https://github.com/Achuan-2/siyuan-plugin-copilot/issues/44)
 - 🐛 多模型回答无法终止 [#43](https://github.com/Achuan-2/siyuan-plugin-copilot/issues/43)
